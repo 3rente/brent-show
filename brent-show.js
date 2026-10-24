@@ -4,6 +4,8 @@
  *  See LICENSE. Third-party map data in assets/earth.json keeps its own license (see LICENSE, section 4).
  *  Mount: <div id="brent-show"></div><script src=".../brent-show.js" defer></script>
  *  Options on the div: data-accent="#FF5B1F"  data-hide-header="true"  data-takeover="true"
+ *  While Squarespace is in edit mode (or with ?brentshow=off in the URL) the show steps aside and the code block
+ *  shows a placeholder, so the block stays easy to find and edit.
  */
 (function () {
 'use strict';
@@ -966,9 +968,17 @@ var FONTS = "https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght
 
 function injectOnce(id, make) { if (!document.getElementById(id)) { var el = make(); el.id = id; document.head.appendChild(el); } }
 
+// ---- Squarespace-aware mounting: full takeover on the live site; out of the way while you edit
+function isEditing() {
+  var c = (document.body && document.body.className || '') + ' ' + document.documentElement.className;
+  return /sqs-edit-mode|sqs-editing|edit-mode-active/.test(c);
+}
+function isOff() { return /[?&]brentshow=off\b/.test(location.search); }
+var HEADER_CSS = '#header,header#header,.Header,header.Header,.Mobile-bar,.Mobile-bar--top,.header-announcement-bar-wrapper{display:none!important}';
+
 function mount(host) {
   if (host.__brentShow) return;
-  host.__brentShow = true;
+  host.__brentShow = { active: false };
   var accent = host.getAttribute('data-accent') || '#FF5B1F';
   var hideHeader = host.getAttribute('data-hide-header') !== 'false';
   var takeover = host.getAttribute('data-takeover') !== 'false';
@@ -983,47 +993,66 @@ function mount(host) {
       '.brent-show-root a{color:#15171A;text-decoration:none}.brent-show-root a:hover{color:#4A4E52}' +
       '.brent-show-root footer a{color:#EDEEE9}' +
       '.brent-show-root button{font:inherit;line-height:normal}' +
-      (hideHeader ? '#header,header#header,.header-announcement-bar-wrapper{display:none!important}' : '');
+      '.brent-show-placeholder{font:500 13px/1.5 "JetBrains Mono",monospace;letter-spacing:1px;color:#15171A;background:#F2F1ED;border:1px dashed #FF5B1F;border-radius:10px;padding:18px 20px}';
     return st;
   });
 
-  var root = document.createElement('div');
-  root.className = 'brent-show-root';
-  root.innerHTML = MARKUP.split('__ASSET__').join(BASE).split('__ACCENT__').join(accent);
-
-  // Squarespace sections and grids clip or pad their content; the show needs the page's own scroll and full width,
-  // so it moves itself to sit just before the section that holds the code block and hides that section.
-  var placed = false;
-  if (takeover) {
-    var sec = host.closest('section');
-    if (sec && sec.parentNode) { sec.parentNode.insertBefore(root, sec); sec.style.display = 'none'; placed = true; }
+  var S = host.__brentShow;
+  function activate() {
+    if (S.active) return;
+    S.active = true;
+    host.innerHTML = '';
+    var root = document.createElement('div');
+    root.className = 'brent-show-root';
+    root.innerHTML = MARKUP.split('__ASSET__').join(BASE).split('__ACCENT__').join(accent);
+    // Squarespace sections and grids clip or pad their content; the show needs the page's own scroll and full width,
+    // so on the live site it sits just before the section holding the code block and hides that section.
+    S.section = null;
+    var sec = takeover ? host.closest('section') : null;
+    if (sec && sec.parentNode) { sec.parentNode.insertBefore(root, sec); sec.style.display = 'none'; S.section = sec; }
+    else host.appendChild(root);
+    S.root = root;
+    if (hideHeader) { var hs = document.createElement('style'); hs.textContent = HEADER_CSS; document.head.appendChild(hs); S.headerStyle = hs; }
+    // position: sticky stops working under any ancestor that clips overflow
+    S.fixed = [];
+    for (var el = root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+      var cs = getComputedStyle(el);
+      if (cs.overflow !== 'visible' || cs.overflowY !== 'visible' || cs.overflowX !== 'visible') { S.fixed.push([el, el.style.overflow]); el.style.overflow = 'visible'; }
+    }
+    var comp = new Component({ accent: accent });
+    S.comp = comp;
+    var q = function (sel) { return root.querySelector(sel); };
+    var vals = comp.renderVals();
+    root.querySelectorAll('[data-ref]').forEach(function (n) { var fn = vals[n.getAttribute('data-ref')]; if (typeof fn === 'function') fn(n); });
+    var img = q('[data-dyn="img"]'), ov = q('[data-dyn="overlay"]'), ov2 = q('[data-dyn="overlay2"]');
+    var gl = q('[data-ref="glRef"]'), card = q('[data-ref="cardRef"]');
+    comp._apply = function () {
+      var v = comp.renderVals();
+      if (img) img.style.opacity = v.imgOpacity;
+      if (gl) gl.style.opacity = v.glOpacity;
+      if (card) card.style.opacity = v.cardOpacity;
+      if (ov) { ov.style.opacity = v.overlayOpacity; ov.style.pointerEvents = v.overlayPointer; }
+      if (ov2) ov2.style.opacity = v.overlayOpacity;
+    };
+    comp._apply();
+    comp.componentDidMount();
   }
-  if (!placed) host.appendChild(root);
-  // position: sticky stops working under any ancestor that clips overflow
-  for (var el = root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
-    var cs = getComputedStyle(el);
-    if (cs.overflow !== 'visible' || cs.overflowY !== 'visible' || cs.overflowX !== 'visible') { el.style.overflow = 'visible'; }
-    if (cs.contain && cs.contain !== 'none') el.style.contain = 'none';
+  function deactivate() {
+    if (S.active) {
+      S.active = false;
+      try { S.comp.componentWillUnmount(); } catch (e) {}
+      if (S.root && S.root.parentNode) S.root.parentNode.removeChild(S.root);
+      if (S.section) S.section.style.display = '';
+      if (S.headerStyle && S.headerStyle.parentNode) S.headerStyle.parentNode.removeChild(S.headerStyle);
+      (S.fixed || []).forEach(function (f) { f[0].style.overflow = f[1]; });
+      S.root = S.comp = S.section = S.headerStyle = null; S.fixed = [];
+    }
+    host.innerHTML = '<div class="brent-show-placeholder">BRENT SHOW · hero, night show, map stories<br>This is the code block that loads it. The animation is paused while you edit and plays on the live site.</div>';
   }
-
-  var comp = new Component({ accent: accent });
-  var q = function (sel) { return root.querySelector(sel); };
-  var vals = comp.renderVals();
-  root.querySelectorAll('[data-ref]').forEach(function (n) { var fn = vals[n.getAttribute('data-ref')]; if (typeof fn === 'function') fn(n); });
-  var btn = q('[data-action="replay"]');
-  if (btn) btn.addEventListener('click', function () { comp.renderVals().replay(); });
-  var img = q('[data-dyn="img"]'), ov = q('[data-dyn="overlay"]'), ov2 = q('[data-dyn="overlay2"]');
-  var gl = q('[data-ref="glRef"]'), card = q('[data-ref="cardRef"]');
-  comp._apply = function () {
-    var v = comp.renderVals();
-    if (img) img.style.opacity = v.imgOpacity;
-    if (gl) gl.style.opacity = v.glOpacity;
-    if (card) card.style.opacity = v.cardOpacity;
-    if (ov) { ov.style.opacity = v.overlayOpacity; ov.style.pointerEvents = v.overlayPointer; }
-    if (ov2) ov2.style.opacity = v.overlayOpacity;
-  };
-  comp._apply();
-  comp.componentDidMount();
+  function sync() { if (isEditing() || isOff()) deactivate(); else activate(); }
+  sync();
+  // follow Squarespace switching in and out of edit mode
+  try { new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
 }
 
 function boot() {
