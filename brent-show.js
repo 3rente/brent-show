@@ -759,7 +759,8 @@ drawStage(t, s) {
 drawStarlink(ctx, W, H, pe, s, C, horizonY) {
   // drawn in the show's own frame, so when the camera looks up the train stays with BRENT ELIASON
   var NSAT = 28, gap = 0.026;
-  var u0 = (pe - 0.86) / 0.36;
+  var st0 = this.firstLockPe || 0.86, st1 = 1.22;
+  var u0 = (pe - st0) / (st1 - st0);
   var head = u0 * (1 + NSAT * gap + 0.1) - 0.05;
   if (head < -0.05 || head - NSAT * gap > 1.05) return;
   ctx.save(); ctx.beginPath(); ctx.rect(0, -H * 2, W, horizonY + H * 2); ctx.clip();
@@ -802,8 +803,9 @@ getPaths(w, h, bx, by, bw, bh) {
   }
   var times = scheduleLaunches(plan, list.map(function (q) { return q.pf.T; }));
   var formed = 0;
-  for (i = 0; i < list.length; i++) { list[i].launch = times[i]; formed = Math.max(formed, times[i] + list[i].pf.T); }
-  this.pathCache = { key: key, list: list, formed: formed };
+  var first = Infinity;
+  for (i = 0; i < list.length; i++) { list[i].launch = times[i]; formed = Math.max(formed, times[i] + list[i].pf.T); first = Math.min(first, times[i] + list[i].pf.T); }
+  this.pathCache = { key: key, list: list, formed: formed, first: first };
   return this.pathCache;
 }
 drawShow(ctx, W, H, p, s) {
@@ -813,6 +815,8 @@ drawShow(ctx, W, H, p, s) {
   FIELD.half = Math.min(0.46, Math.max(0.28, (bw * 0.85) / W)); FIELD.cx = 0.5;
   var paths = this.getPaths(W, H, bx, by, bw, bh);
   var T = paths.formed;
+  // scroll position where the first drones lock in and light up (the top row of BRENT): the Starlink pass starts here
+  this.firstLockPe = 0.64 + 0.22 * (paths.first / T);
   var it = clamp01((p - 0.64) / 0.22) * T;
   var lock = smooth(0.84, 0.9, p);
   // the reveal turn: left side near at lock, then scroll swings the right side forward
