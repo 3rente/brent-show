@@ -1,9 +1,9 @@
-/*! brent-show.js — Brent "Duster" Eliason · hero, night drone show, orbit transition and career stories.
+/*! brent-show.js —
  *  Copyright (c) 2026 Brent Eliason. All rights reserved. Not open source: no permission is granted to copy, modify,
  *  redistribute or reuse this code or its assets, or to use them to train or improve AI/machine-learning models.
  *  See LICENSE. Third-party map data in assets/earth.json keeps its own license (see LICENSE, section 4).
  *  Mount: <div id="brent-show"></div><script src=".../brent-show.js" defer></script>
- *  Options on the div: data-accent="#FF5B1F"  data-hide-header="true"  data-takeover="true"
+ *  Options on the div: data-accent="#FF5B1F"  data-hide-header="true"  data-hide-footer="true"  data-takeover="true"
  *  While Squarespace is in edit mode (or with ?brentshow=off in the URL) the show steps aside and the code block
  *  shows a placeholder, so the block stays easy to find and edit.
  */
@@ -1587,12 +1587,15 @@ function isEditing() {
 }
 function isOff() { return /[?&]brentshow=off\b/.test(location.search); }
 var HEADER_CSS = '#header,header#header,.Header,header.Header,.Mobile-bar,.Mobile-bar--top,.header-announcement-bar-wrapper{display:none!important}';
+// the template footer (social links, "Powered by Squarespace") across 7.0 and 7.1 templates; the show's own footer has id="contact" and is untouched
+var FOOTER_CSS = '#footer,footer#footer,.Footer,footer.Footer,#footer-sections,footer.sections,.footer-sections,[data-footer-sections],.sqs-footer,.site-footer,.Footer-blocks,.Footer-inner,#siteWrapper>footer,.Site-footer,.footer-wrapper,#footerWrapper,.sqs-announcement-bar-dropzone+footer{display:none!important}';
 
 function mount(host) {
   if (host.__brentShow) return;
   host.__brentShow = { active: false };
   var accent = host.getAttribute('data-accent') || '#FF5B1F';
   var hideHeader = host.getAttribute('data-hide-header') !== 'false';
+  var hideFooter = host.getAttribute('data-hide-footer') !== 'false';
   var takeover = host.getAttribute('data-takeover') !== 'false';
 
   injectOnce('brent-show-fonts', function () { var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = FONTS; return l; });
@@ -1625,7 +1628,7 @@ function mount(host) {
     if (sec && sec.parentNode) { sec.parentNode.insertBefore(root, sec); sec.style.display = 'none'; S.section = sec; }
     else host.appendChild(root);
     S.root = root;
-    if (hideHeader) { var hs = document.createElement('style'); hs.textContent = HEADER_CSS; document.head.appendChild(hs); S.headerStyle = hs; }
+    if (hideHeader || hideFooter) { var hs = document.createElement('style'); hs.textContent = (hideHeader ? HEADER_CSS : '') + (hideFooter ? FOOTER_CSS : ''); document.head.appendChild(hs); S.headerStyle = hs; }
     // position: sticky stops working under any ancestor that clips overflow
     S.fixed = [];
     for (var el = root.parentElement; el && el !== document.documentElement; el = el.parentElement) {
